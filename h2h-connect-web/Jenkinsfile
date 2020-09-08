@@ -1,0 +1,48 @@
+pipeline {
+  agent any
+  tools {
+    jdk 'jdk8'
+    maven 'maven3'
+  }
+  environment {
+    PARENT_POM_DIR = "h2h-connect-web"
+    MAVEN_OPTS = "-Xmx1024m -XX:MaxPermSize=512m"
+  }
+  stages {
+    stage('Build') {
+      steps {
+        dir("${env.PARENT_POM_DIR}") {
+          sh 'mvn install cobertura:cobertura -Dcobertura.report.format=xml'
+        }
+      }
+      post {
+        always {
+          junit allowEmptyResults: true, testResults: '**/target/*-reports/TEST-*.xml'
+          step([$class: 'CoberturaPublisher', coberturaReportFile: '**/target/site/cobertura/coverage.xml', failNoReports: false])
+        }
+      }
+    }
+    stage('Code Analysis') {
+      steps {
+        dir("${env.PARENT_POM_DIR}") {
+          sh 'mvn sonar:sonar'
+        }
+      }
+    }
+    stage('Deploy') {
+      steps {
+        dir("${env.PARENT_POM_DIR}") {
+          sh 'mvn -B -U deploy'
+        }
+      }
+    }
+    stage('Release') {
+      steps {
+      	sh "svn upgrade"
+        dir("${env.PARENT_POM_DIR}") {
+          sh 'mvn -B release:prepare release:perform -DautoVersionSubmodules=true -Dusername=alm -Dpassword=evolvus*123'
+        }
+      }
+    }
+  }
+}

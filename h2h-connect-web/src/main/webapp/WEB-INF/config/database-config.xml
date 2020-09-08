@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:tx="http://www.springframework.org/schema/tx"
+	xsi:schemaLocation="
+    http://www.springframework.org/schema/beans 
+    http://www.springframework.org/schema/beans/spring-beans.xsd
+    http://www.springframework.org/schema/context 
+    http://www.springframework.org/schema/context/spring-context.xsd    
+    http://www.springframework.org/schema/tx 
+    http://www.springframework.org/schema/tx/spring-tx.xsd
+    http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd">
+
+	<bean id="propertyConfigurer"
+		class="org.jasypt.spring31.properties.EncryptablePropertyPlaceholderConfigurer">
+		<constructor-arg ref="configurationEncryptor"></constructor-arg>
+
+		<property name="locations">
+			<list>
+				<value>file:///${app_config_dds}/connect.properties</value>
+			</list>
+		</property>
+		<property name="order" value="0" />
+	</bean>
+	<bean id="configurationEncryptor" class="org.jasypt.encryption.pbe.StandardPBEStringEncryptor">
+		<property name="config" ref="environmentVariablesConfiguration" />
+	</bean>
+	<bean id="environmentVariablesConfiguration" class="org.jasypt.encryption.pbe.config.EnvironmentStringPBEConfig">
+		<property name="algorithm" value="PBEWITHMD5ANDDES" />
+		<!-- <property name="passwordEnvName" value="APP_ENCP_PASSWORD1" /> -->
+		<property name="passwordEnvName" value="JASYPT_ENCP_KEY" />
+	</bean>
+	<bean id="entityManagerFactory"
+		class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
+		<property name="dataSource" ref="dataSource" />
+		<property name="packagesToScan" value="com.evolvus.dds" />
+		<property name="jpaVendorAdapter">
+			<bean class="org.springframework.orm.jpa.vendor.HibernateJpaVendorAdapter">
+				<property name="showSql" value="${db.show.sql}" />
+				<property name="generateDdl" value="${db.generate.ddl}" />
+				<property name="databasePlatform" value="${db.dialect}" />
+			</bean>
+		</property>
+	</bean>
+
+	<bean id="transactionManager" class="org.springframework.orm.jpa.JpaTransactionManager">
+		<property name="entityManagerFactory" ref="entityManagerFactory" />
+	</bean>
+
+	<tx:annotation-driven />
+
+	<alias name="${db.data.source.type}DataSource" alias="dataSource" />
+
+	<bean id="embeddedDataSource" lazy-init="true"
+		class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+		<property name="driverClassName">
+			<value>${db.driver}</value>
+		</property>
+		<property name="url">
+			<value>${db.url}</value>
+		</property>
+		<property name="username">
+			<value>${db.user}</value>
+		</property>
+		<property name="password">
+			<value>${db.password}</value>
+		</property>
+	</bean>
+
+	<bean id="jdbcDataSource" lazy-init="true"
+		class="org.springframework.jdbc.datasource.DriverManagerDataSource">
+		<property name="driverClassName">
+			<value>${db.driver}</value>
+		</property>
+		<property name="url">
+			<value>${db.url}</value>
+		</property>
+		<property name="username">
+			<value>${db.user}</value>
+		</property>
+		<property name="password">
+			<value>${db.password}</value>
+		</property>
+	</bean>
+ 	
+	<bean id="poolDataSource" lazy-init="true"
+		class="com.zaxxer.hikari.HikariDataSource"  destroy-method="close">
+        <property name="dataSourceClassName" value="${data.source.class.name}"/>
+		<property name="maximumPoolSize" value="${maximum.pool.size}" />
+        <property name="maxLifetime" value="${max.lifetime}" />
+        <property name="idleTimeout" value="${idle.timeout}" />
+		<property name="dataSourceProperties">
+			<props>
+				<prop key="url">${db.url}</prop>
+				<prop key="user">${db.user}</prop>
+				<prop key="password">${db.password}</prop>
+			</props>
+		</property>
+	</bean>
+
+</beans>

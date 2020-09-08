@@ -1,0 +1,126 @@
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:camel="http://camel.apache.org/schema/spring"
+	xmlns:util="http://www.springframework.org/schema/util"
+	xsi:schemaLocation="http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd	
+	 http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd
+	  http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd">
+
+
+	<camel:camelContext id="flux-connect">
+		<camel:contextScan />
+		<camel:endpoint id="sftpOutward"
+			uri="sftp://${sftp.user}@${sftp.ip}:${sftp.port}/${sftp.path.outbound}/?password=${sftp.password}&amp;privateKeyFile=${sftp.key}&amp;binary=true&amp;stepwise=false&amp;noop=true" />
+
+	<!-- <camel:endpoint id="sftpOutwardDummy"
+		uri="file://${local.h2h.folder}/OUT1/?doneFileName=$simple{file:name}.done&amp;scheduler=spring&amp;scheduler.cron=${sftp.cron}&amp;maxMessagesPerPoll=${file.max.messages.per.poll}" />
+ -->
+		<camel:endpoint id="sftpInward"
+			uri="sftp://${sftp.user}@${sftp.ip}:${sftp.port}/${sftp.path.inbound}/?filter=#fluxInwardFilter&amp;password=${sftp.password}&amp;privateKeyFile=${sftp.key}&amp;binary=true&amp;stepwise=false&amp;scheduler=spring&amp;scheduler.cron=${sftp.cron}&amp;idempotent=true&amp;idempotentRepository=#dataTableStore&amp;maxMessagesPerPoll=${sftp.max.messages.per.poll}" />
+
+		<camel:endpoint id="sftpAck"
+			uri="sftp://${sftp.user}@${sftp.ip}:${sftp.port}/${sftp.path.ack}/?filter=#fluxAckFilter&amp;password=${sftp.password}&amp;privateKeyFile=${sftp.key}&amp;binary=true&amp;stepwise=false&amp;scheduler=spring&amp;scheduler.cron=${sftp.cron}&amp;idempotent=true&amp;idempotentRepository=#dataTableStore&amp;maxMessagesPerPoll=${sftp.max.messages.per.poll}" />
+
+		<camel:endpoint id="sftpOutwardReport"
+			uri="sftp://${sftp.user}@${sftp.ip}:${sftp.port}/${sftp.path.report}/?password=${sftp.password}&amp;privateKeyFile=${sftp.key}&amp;binary=true&amp;stepwise=false&amp;noop=true" />
+
+		<camel:endpoint id="localStdOutward"
+			uri="file://${local.h2h.folder}/STD_OUT/?doneFileName=$simple{file:name}.done&amp;scheduler=spring&amp;scheduler.cron=${sftp.cron}&amp;maxMessagesPerPoll=${file.max.messages.per.poll}" />
+
+		<camel:endpoint id="localHighOutward"
+			uri="file://${local.h2h.folder}/HIGH_OUT/?scheduler=spring&amp;scheduler.cron=${sftp.cron}&amp;maxMessagesPerPoll=${file.max.messages.per.poll}" />
+
+		<camel:endpoint id="localInward"
+			uri="file://${local.h2h.folder}/INW?doneFileName=$simple{file:name}.done" />
+
+		<camel:endpoint id="localAck"
+			uri="file://${local.h2h.folder}/Inbox?doneFileName=$simple{file:name}.done" />
+
+		<camel:endpoint id="localOutward"
+			uri="file://${local.h2h.folder}/OUT/?doneFileName=$simple{file:name}.done&amp;scheduler=spring&amp;scheduler.cron=${sftp.cron}&amp;maxMessagesPerPoll=${file.max.messages.per.poll}" />
+
+		<camel:endpoint id="localEMandateReport"
+			uri="file://${local.h2h.folder}/EMND_REPORT/?doneFileName=$simple{file:name}.done&amp;scheduler=spring&amp;scheduler.cron=${sftp.cron}&amp;maxMessagesPerPoll=${file.max.messages.per.poll}" />
+
+		<camel:route id="sftpStdOutRoute">
+			<camel:from ref="localStdOutward" />
+			<camel:setHeader headerName="filePath">
+				<camel:simple>${file:absolute.path}</camel:simple>
+			</camel:setHeader>
+			<camel:setHeader headerName="fileName">
+				<camel:simple>${file:onlyname}</camel:simple>
+			</camel:setHeader>
+			<camel:process ref="recreateInwProcessor" />
+			<camel:to ref="sftpOutward" />
+		</camel:route>
+
+		<camel:route id="sftpOutRoute">
+			<camel:from ref="localOutward" />
+			<camel:setHeader headerName="filePath">
+				<camel:simple>${file:absolute.path}</camel:simple>
+			</camel:setHeader>
+			<camel:setHeader headerName="fileName">
+				<camel:simple>${file:onlyname}</camel:simple>
+			</camel:setHeader>
+			<camel:process ref="recreateInwProcessor" />	
+			<camel:to ref="sftpOutward" />
+		</camel:route>
+
+		<camel:route id="sftpHighOutRoute">
+			<camel:from ref="localHighOutward" />
+			<camel:to ref="sftpOutward" />
+		</camel:route>
+
+		<camel:route id="sftpInRoute">
+			<camel:from ref="sftpInward" />
+			<camel:setHeader headerName="filePath">
+				<camel:simple>${file:absolute.path}</camel:simple>
+			</camel:setHeader>
+			<camel:setHeader headerName="fileName">
+				<camel:simple>${file:onlyname}</camel:simple>
+			</camel:setHeader>
+			<camel:process ref="PGPDecryptionProcessor" />	
+			
+			<camel:to ref="localInward" />
+		</camel:route>
+
+		<camel:route id="ackRoute">
+			<camel:from ref="sftpAck" />
+			<camel:to ref="localAck" />
+		</camel:route>
+		<!-- separate route for EMND_REPORT -->
+		<camel:route id="sftpEMandateReportRoute">
+			<camel:from ref="localEMandateReport" />
+			<camel:to ref="sftpOutwardReport" />
+		</camel:route>
+
+	</camel:camelContext>
+
+	<bean id="fluxInwardFilter"
+		class="org.apache.camel.component.file.AntPathMatcherGenericFileFilter">
+		<property name="includes" value="${flux.inward.file.pattern}"></property>
+		<property name="excludes"
+			value="${flux.inward.excludes.file.pattern}"></property>
+	</bean>
+
+	<bean id="fluxAckFilter"
+		class="com.evolvus.dds.h2hconnectweb.bean.CamelGenericFileFilter">
+		<property name="includes" value="${flux.ack.file.pattern}"></property>
+		<property name="excludes"
+			value="${flux.ack.excludes.file.pattern}"></property>
+	</bean>
+
+	<bean id="dataTableStore"
+		class="com.evolvus.dds.h2hconnectweb.service.DataTableIdempotentRepository">
+		<property name="fileType" value="Flux" />
+	</bean>
+	
+	<bean id="recreateInwProcessor"
+		class="com.evolvus.dds.h2hconnectweb.processor.PGPEncryptionProcessor">
+	</bean>
+	
+	<bean id="PGPDecryptionProcessor"
+		class="com.evolvus.dds.h2hconnectweb.processor.PGPDecryptionProcessor">
+	</bean>
+
+</beans>
